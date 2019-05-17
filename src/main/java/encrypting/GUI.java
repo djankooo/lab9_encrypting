@@ -15,29 +15,30 @@ import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javafx.util.Callback;
-import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.NoSuchPaddingException;
+
+import javax.crypto.*;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import java.awt.*;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.*;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
+import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-
 public class GUI extends Application {
 
-    private Desktop desktop = Desktop.getDesktop();
     private FileChooser encryptFileChooser = new FileChooser();
     private FileChooser decryptFileChooser = new FileChooser();
 
     private ArrayList<Key> keys = new ArrayList();
-    private int iterator = 0;
 
     private TabPane tabPane = new TabPane();
 
@@ -55,20 +56,15 @@ public class GUI extends Application {
     private Button encryptFileButton = new Button("Encrypt key");
     private Button decryptFileButton = new Button("Decrypt key");
 
-    private ComboBox encryptKeyComboBox;
-    private ComboBox decryptKeyComboBox;
-
     private TextField encryptFilePathTextField = new TextField();
     private TextField decryptFilePathTextField = new TextField();
-
-    private KeyPair keyPair;
+    private TextField encryptKeyPathTextField = new TextField();
+    private TextField decryptKeyPathTextField = new TextField();
 
     private HBox encryptHBox = new HBox();
     private HBox decryptHBox = new HBox();
 
     private Label keyIDLabel = new Label("Key ID");
-    private Label keyTypeLabel = new Label("Type");
-    private Label keyBitsLabel = new Label("Bits");
 
     private Label encryptKeyLabel = new Label("Key ID");
     private Label encryptFileLabel = new Label("File");
@@ -77,9 +73,6 @@ public class GUI extends Application {
     private Label decryptFileLabel = new Label("File");
 
     private TextField keyIDTextField = new TextField();
-    private TextField keyTypeTextField = new TextField();
-    private TextField keyBitsTextField = new TextField();
-
 
     public static void main(String[] args) {
         launch(args);
@@ -88,22 +81,15 @@ public class GUI extends Application {
     @Override
     public void start(Stage primaryStage) throws Exception {
 
-        keys.add(new Key( String.valueOf(iterator++), "RSA", 2048));
-
         primaryStage.setTitle("Encrypting");
 
         createKeyGridPane = createGridPane();
         encryptGridPane = createGridPane();
         decryptGridPane = createGridPane();
 
-
-        setTables();
-
         setUIControls(primaryStage);
 
-
         setTabs();
-
 
         primaryStage.setScene(new Scene(tabPane, 1000, 500));
         primaryStage.show();
@@ -123,13 +109,6 @@ public class GUI extends Application {
     }
 
 
-    private VBox createVBoxPane() {
-        VBox vBox = new VBox();
-        vBox.setAlignment(Pos.CENTER);
-        vBox.setPadding(new Insets(20, 20, 20, 20));
-        return vBox;
-    }
-
     private GridPane createGridPane() {
         GridPane gridPane = new GridPane();
         gridPane.setAlignment(Pos.CENTER);
@@ -139,30 +118,20 @@ public class GUI extends Application {
 
     private void setUIControls(Stage primaryStage) throws Exception {
 
-
         createKeyGridPane.add(keyIDLabel, 0, 0);
         createKeyGridPane.add(keyIDTextField, 1, 0);
-        createKeyGridPane.add(keyTypeLabel, 0, 1);
-        createKeyGridPane.add(keyTypeTextField, 1, 1);
-        createKeyGridPane.add(keyBitsLabel, 0, 2);
-        createKeyGridPane.add(keyBitsTextField, 1, 2);
         createKeyGridPane.add(createKeyButton, 1, 3);
 
-        keyIDTextField.setText("aaa");
-        keyTypeTextField.setText("RSA");
-        keyBitsTextField.setText("2048");
-
+        keyIDTextField.setText("klucz");
 
         createKeyButton.setMinWidth(primaryStage.getWidth());
-
-        // Encryption
 
         encryptFileChooser.setTitle("Open Resource File");
 
         encryptHBox.getChildren().addAll(encryptFilePathTextField, encryptChooseFileButton);
 
         encryptGridPane.add(encryptKeyLabel, 0, 0);
-        encryptGridPane.add(encryptKeyComboBox, 1, 0);
+        encryptGridPane.add(encryptKeyPathTextField, 1, 0);
         encryptGridPane.add(encryptFileLabel, 0, 1);
         encryptGridPane.add(encryptHBox, 1, 1);
         encryptGridPane.add(encryptFileButton, 1, 2);
@@ -178,14 +147,12 @@ public class GUI extends Application {
             }
         });
 
-        // Decription
-
         decryptFileChooser.setTitle("Open Resource File");
 
         decryptHBox.getChildren().addAll(decryptFilePathTextField, decryptChooseFileButton);
 
         decryptGridPane.add(decryptKeyLabel, 0, 0);
-        decryptGridPane.add(decryptKeyComboBox, 1, 0);
+        decryptGridPane.add(decryptKeyPathTextField, 1, 0);
         decryptGridPane.add(decryptFileLabel, 0, 1);
         decryptGridPane.add(decryptHBox, 1, 1);
         decryptGridPane.add(decryptFileButton, 1, 2);
@@ -201,97 +168,124 @@ public class GUI extends Application {
             }
         });
 
-
         createKeyButton.setOnAction(event -> {
             try {
-                keyPair = generateKeyPair(keyTypeTextField.getText(), Integer.valueOf(keyBitsTextField.getText()));
-                keys.add(new Key(String.valueOf(iterator++), keyTypeTextField.getText(), Integer.valueOf(keyBitsTextField.getText())));
-
+                doGenkey(keyIDTextField.getText());
             } catch (Exception e) {
                 e.printStackTrace();
             }
         });
 
         encryptFileButton.setOnAction( event -> {
-            encryptFile(new File (encryptFilePathTextField.getText()));
+            try {
+                doEncryptRSAWithAES("C:\\Users\\djankooo\\Desktop\\"+encryptKeyPathTextField.getText()+".key", encryptFilePathTextField.getText());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         });
+
         decryptFileButton.setOnAction( event -> {
-            decryptFile(new File (decryptFilePathTextField.getText()));
+            try {
+                doDecryptRSAWithAES("C:\\Users\\djankooo\\Desktop\\"+decryptKeyPathTextField.getText()+".pub", decryptFilePathTextField.getText());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         });
-
-
     }
 
-    public KeyPair generateKeyPair(String type, int bits) throws Exception {
-        KeyPairGenerator generator = KeyPairGenerator.getInstance(type);
-        generator.initialize(bits, new SecureRandom());
-        KeyPair pair = generator.generateKeyPair();
+    private void doGenkey(String name) throws Exception {
 
-        return pair;
-    }
-
-    private void encryptFile(File f) {
-        try {
-//            Key k = (Key) encryptKeyComboBox.getValue();
-//            System.out.println(encryptKeyComboBox.getValue());
-//            PrivateKey pvt = k.getKeyPair().getPrivate();
-            PrivateKey pvt = keys.get(0).getKeyPair().getPrivate();
-            Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            cipher.init(Cipher.ENCRYPT_MODE, pvt);
-            try (FileOutputStream out = new FileOutputStream(f.getAbsolutePath() + "_encoded")) {
-                byte[] encrypted = cipher.doFinal(Files.readAllBytes(f.toPath()));
-                out.write(encrypted);
-            } catch (BadPaddingException | IllegalBlockSizeException e) {
-                e.printStackTrace();
-            }
-        } catch (InvalidKeyException | NoSuchAlgorithmException | NoSuchPaddingException | IOException e) {
-            e.printStackTrace();
+        String fileBase = "C:\\Users\\djankooo\\Desktop\\" + name;
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+        kpg.initialize(2048);
+        KeyPair kp = kpg.generateKeyPair();
+        try (FileOutputStream out = new FileOutputStream(fileBase + ".key")) {
+            out.write(kp.getPrivate().getEncoded());
         }
 
-    }
-
-    private void decryptFile(File f) {
-        try {
-            //Key k = (Key) encryptKeyComboBox.getValue();
-            //PublicKey pub = k.getKeyPair().getPublic();
-
-            PublicKey pub = keys.get(0).getKeyPair().getPublic();
-            Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            cipher.init(Cipher.DECRYPT_MODE, pub);
-            try (FileOutputStream out = new FileOutputStream(f.getAbsolutePath() +  "_decoded")) {
-                byte[] encrypted = cipher.doFinal(Files.readAllBytes(f.toPath()));
-                out.write(encrypted);
-            } catch (BadPaddingException | IllegalBlockSizeException e) {
-                e.printStackTrace();
-            }
-        } catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | IOException e) {
-            e.printStackTrace();
+        try (FileOutputStream out = new FileOutputStream(fileBase + ".pub")) {
+            out.write(kp.getPublic().getEncoded());
         }
-
     }
 
+    private void doEncryptRSAWithAES(String pvtKeyFile, String inputFile) throws Exception {
 
-    private void setTables() {
+        byte[] bytes = Files.readAllBytes(Paths.get(pvtKeyFile));
+        PKCS8EncodedKeySpec ks = new PKCS8EncodedKeySpec(bytes);
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        PrivateKey pvt = kf.generatePrivate(ks);
 
-        encryptKeyComboBox = new ComboBox(FXCollections.observableList(keys));
-        decryptKeyComboBox = new ComboBox(FXCollections.observableList(keys));
+        KeyGenerator kgen = KeyGenerator.getInstance("AES");
+        kgen.init(128);
+        SecretKey skey = kgen.generateKey();
 
-        Callback<ListView<Key>, ListCell<Key>> keysComboBoxFactory = lv -> new ListCell<Key>() {
-            @Override
-            protected void updateItem(Key item, boolean empty) {
-                encryptKeyComboBox = new ComboBox(FXCollections.observableList(keys));
-                super.updateItem(item, empty);
-                setText(empty ? "" : item.getKeyPairID());
+        byte[] iv = new byte[128/8];
+        Random srandom = new Random();
+        srandom.nextBytes(iv);
+        IvParameterSpec ivspec = new IvParameterSpec(iv);
+
+        try (FileOutputStream out = new FileOutputStream(inputFile + ".enc")) {
+            {
+                Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+                cipher.init(Cipher.ENCRYPT_MODE, pvt);
+                byte[] b = cipher.doFinal(skey.getEncoded());
+                out.write(b);
+                System.err.println("AES Key Length: " + b.length);
             }
 
-        };
+            out.write(iv);
+            System.err.println("IV Length: " + iv.length);
 
-        encryptKeyComboBox.setCellFactory(keysComboBoxFactory);
-        encryptKeyComboBox.setButtonCell(keysComboBoxFactory.call(null));
-
-
-        decryptKeyComboBox.setCellFactory(keysComboBoxFactory);
-        decryptKeyComboBox.setButtonCell(keysComboBoxFactory.call(null));
-
+            Cipher ci = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            ci.init(Cipher.ENCRYPT_MODE, skey, ivspec);
+            try (FileInputStream in = new FileInputStream(inputFile)) {
+                processFile(ci, in, out);
+            }
+        }
     }
+
+    private void doDecryptRSAWithAES(String pubKeyFile, String inputFile) throws Exception {
+
+
+        byte[] bytes = Files.readAllBytes(Paths.get(pubKeyFile));
+        X509EncodedKeySpec ks = new X509EncodedKeySpec(bytes);
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        PublicKey pub = kf.generatePublic(ks);
+
+        try (FileInputStream in = new FileInputStream(inputFile)) {
+            SecretKeySpec skey = null;
+            {
+                Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+                cipher.init(Cipher.DECRYPT_MODE, pub);
+                byte[] b = new byte[256];
+                in.read(b);
+                byte[] keyb = cipher.doFinal(b);
+                skey = new SecretKeySpec(keyb, "AES");
+            }
+
+            byte[] iv = new byte[128/8];
+            in.read(iv);
+            IvParameterSpec ivspec = new IvParameterSpec(iv);
+
+            Cipher ci = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            ci.init(Cipher.DECRYPT_MODE, skey, ivspec);
+
+            try (FileOutputStream out = new FileOutputStream(inputFile+".ver")){
+                processFile(ci, in, out);
+            }
+        }
+    }
+
+
+    private void processFile(Cipher ci, InputStream in, OutputStream out) throws Exception {
+        byte[] ibuf = new byte[1024];
+        int len;
+        while ((len = in.read(ibuf)) != -1) {
+            byte[] obuf = ci.update(ibuf, 0, len);
+            if ( obuf != null ) out.write(obuf);
+        }
+        byte[] obuf = ci.doFinal();
+        if ( obuf != null ) out.write(obuf);
+    }
+
 }
